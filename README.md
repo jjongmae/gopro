@@ -72,8 +72,8 @@ python extract_gps.py --single video.MP4 -f gpx -o ./output
 - latitude: 위도
 - longitude: 경도
 - altitude: 고도 (미터)
-- speed_2d: 2D 속도
-- speed_3d: 3D 속도
+- speed: 속도 (m/s, 미터/초)
+  - km/h로 변환하려면 × 3.6 (예: 8.913 m/s = 32.09 km/h)
 
 ## 지원 파일 형식
 
