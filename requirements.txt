@@ -1,3 +1,5 @@
 gopro2gpx
 click
 pyshp
+PyQt5
+opencv-python-headless
