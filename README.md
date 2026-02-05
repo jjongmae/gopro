@@ -26,19 +26,22 @@ pip install -r requirements.txt
 
 ```
 gopro/
-├── input/          # GoPro 영상 파일을 여기에 넣으세요
-├── output/         # 추출된 GPS 데이터가 여기에 저장됩니다
+├── video/          # GoPro 영상 파일을 여기에 넣으세요
+├── shp/            # 추출된 GPS 데이터가 여기에 저장됩니다
 ├── extract_gps.py
 └── requirements.txt
 ```
 
 ## 사용법
 
-### 배치 모드 (기본) - input 폴더의 모든 영상 처리
+### 배치 모드 (기본) - video 폴더의 모든 영상 처리
 
 ```bash
-# 기본 사용 (JSON 형식)
+# 기본 사용 (SHP 형식)
 python extract_gps.py
+
+# JSON 형식으로 저장
+python extract_gps.py -f json
 
 # CSV 형식으로 저장
 python extract_gps.py -f csv
@@ -65,9 +68,11 @@ python extract_gps.py --single video.MP4 -f gpx -o ./output
 - **JSON**: GPS 데이터를 JSON 배열로 저장
 - **CSV**: 스프레드시트에서 열 수 있는 CSV 형식
 - **GPX**: GPS 교환 형식 (Google Earth, QGIS 등에서 사용 가능)
+- **SHP**: Shapefile 형식 (QGIS, ArcGIS 등 GIS 소프트웨어에서 사용 가능, WGS84 좌표계)
 
 ## 추출되는 데이터
 
+- frame_idx: 비디오 프레임 인덱스 (객체 인식 결과와 매칭용)
 - timestamp: 시간 정보
 - latitude: 위도
 - longitude: 경도

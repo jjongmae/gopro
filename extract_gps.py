@@ -39,8 +39,9 @@ def extract_gps_data(video_path):
             return None
 
         gps_data = []
-        for point in points:
+        for idx, point in enumerate(points):
             gps_entry = {
+                'frame_idx': idx,
                 'timestamp': point.time.isoformat() if point.time else None,
                 'latitude': point.latitude,
                 'longitude': point.longitude,
@@ -80,6 +81,50 @@ def save_to_csv(data, output_path):
     print(f"Saved to: {output_path}")
 
 
+def save_to_shp(data, output_path):
+    """SHP(Shapefile) 형식으로 저장"""
+    import shapefile
+
+    if not data:
+        print("저장할 데이터가 없습니다")
+        return
+
+    # Shapefile writer 생성 (Point 타입)
+    w = shapefile.Writer(str(output_path).replace('.shp', ''))
+
+    # 필드 정의
+    w.field('frame_idx', 'N', decimal=0)  # 프레임 인덱스
+    w.field('timestamp', 'C', size=30)  # 문자열
+    w.field('latitude', 'N', decimal=8)  # 숫자
+    w.field('longitude', 'N', decimal=8)
+    w.field('altitude', 'N', decimal=2)
+    w.field('speed', 'N', decimal=4)
+
+    # 포인트 추가
+    for point in data:
+        if point['latitude'] and point['longitude']:
+            w.point(point['longitude'], point['latitude'])
+            w.record(
+                point['frame_idx'],
+                point['timestamp'] or '',
+                point['latitude'],
+                point['longitude'],
+                point['altitude'] or 0,
+                point['speed'] or 0
+            )
+
+    w.close()
+
+    # PRJ 파일 생성 (WGS84 좌표계)
+    prj_path = str(output_path).replace('.shp', '.prj')
+    with open(prj_path, 'w') as prj:
+        prj.write('GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",'
+                  'SPHEROID["WGS_1984",6378137,298.257223563]],'
+                  'PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]')
+
+    print(f"Saved to: {output_path}")
+
+
 def save_to_gpx(data, output_path):
     """GPX 형식으로 저장"""
     from xml.etree.ElementTree import Element, SubElement, tostring
@@ -108,6 +153,10 @@ def save_to_gpx(data, output_path):
             if point['timestamp']:
                 SubElement(trkpt, 'time').text = point['timestamp']
 
+            # frame_idx를 extensions에 추가
+            extensions = SubElement(trkpt, 'extensions')
+            SubElement(extensions, 'frame_idx').text = str(point['frame_idx'])
+
     xml_str = minidom.parseString(tostring(gpx)).toprettyxml(indent='  ')
 
     with open(output_path, 'w', encoding='utf-8') as f:
@@ -134,6 +183,8 @@ def process_video(video_path, output_dir, output_format):
         save_to_csv(gps_data, output_path)
     elif output_format == 'gpx':
         save_to_gpx(gps_data, output_path)
+    elif output_format == 'shp':
+        save_to_shp(gps_data, output_path)
 
     return True
 
@@ -170,19 +221,19 @@ def main():
     )
     parser.add_argument(
         '-i', '--input',
-        help='입력 폴더 경로 (기본값: ./input)',
-        default='./input'
+        help='입력 폴더 경로 (기본값: ./video)',
+        default='./video'
     )
     parser.add_argument(
         '-o', '--output',
-        help='출력 폴더 경로 (기본값: ./output)',
-        default='./output'
+        help='출력 폴더 경로 (기본값: ./shp)',
+        default='./shp'
     )
     parser.add_argument(
         '-f', '--format',
-        choices=['json', 'csv', 'gpx'],
-        default='json',
-        help='출력 형식 (기본값: json)'
+        choices=['json', 'csv', 'gpx', 'shp'],
+        default='shp',
+        help='출력 형식 (기본값: shp)'
     )
     parser.add_argument(
         '--single',
