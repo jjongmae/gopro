@@ -116,6 +116,28 @@ python measure_width.py
   - P1_Depth, P2_Depth: 각 점의 깊이(미터)
   - Distance_Meter: 측정된 거리(미터)
 
+### 4. Shapefile에 도로 폭 병합 (update_shp_with_width.py)
+
+측정된 도로 폭 데이터(CSV)를 GPS Shapefile에 병합하여 하나의 파일로 만듭니다.
+
+```bash
+# 기본 사용 (모든 비디오 처리)
+python update_shp_with_width.py
+
+# 특정 비디오 처리 (비디오 이름 지정)
+python update_shp_with_width.py --video GH013057
+# 또는
+python update_shp_with_width.py -v GH013057
+```
+
+**주요 기능:**
+- **데이터 매핑:** CSV의 프레임 번호와 Shapefile의 `frame_idx`를 자동으로 매칭
+- **자동 필터링:** 도로 폭 측정값이 없는 GPS 포인트는 Shapefile에서 **자동으로 삭제**합니다. (측정된 지점만 남김)
+- **백업 생성:** 원본 Shapefile은 `_backup.shp`로 자동 백업됩니다.
+
+**결과물:**
+- `gps_output/비디오이름/비디오이름_gps.shp` 파일에 `road_width` 필드가 추가되고, 측정된 값(미터)이 저장됩니다.
+
 
 
 ## 출력 형식
@@ -134,14 +156,15 @@ python measure_width.py
 ## 추출되는 데이터
 
 ### GPS 데이터
-| 필드      | 설명                                      |
-| --------- | ----------------------------------------- |
-| frame_idx | 비디오 프레임 인덱스 (depth map과 매칭용) |
-| timestamp | 시간 정보                                 |
-| latitude  | 위도                                      |
-| longitude | 경도                                      |
-| altitude  | 고도 (미터)                               |
-| speed     | 속도 (m/s) - km/h로 변환: × 3.6           |
+| 필드       | 설명                                                 |
+| ---------- | ---------------------------------------------------- |
+| frame_idx  | 비디오 프레임 인덱스 (depth map과 매칭용)            |
+| timestamp  | 시간 정보                                            |
+| latitude   | 위도                                                 |
+| longitude  | 경도                                                 |
+| altitude   | 고도 (미터)                                          |
+| speed      | 속도 (m/s) - km/h로 변환: × 3.6                      |
+| road_width | 측정된 도로 폭 (미터) - 측정값 없을 시 레코드 삭제됨 |
 
 ### Depth 데이터
 | 파일                        | 설명                                  |
