@@ -114,8 +114,124 @@ def save_pointcloud_ply(points, colors, output_path):
                 f.write(f"{x:.6f} {y:.6f} {z:.6f}\n")
 
 
+def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cuda", max_views=None):
+    """여러 프레임을 한번에 처리하여 정렬된 depth map과 포인트 클라우드 생성 (Multi-view reconstruction)
+
+    Args:
+        model: MapAnything 모델
+        frame_paths: 프레임 파일 경로 리스트
+        depth_dir: depth map 저장 디렉토리
+        ply_dir: 포인트 클라우드 저장 디렉토리
+        device: 디바이스 (cuda/cpu)
+        max_views: 한번에 처리할 최대 뷰 수 (None이면 전체)
+    """
+    depth_dir.mkdir(parents=True, exist_ok=True)
+    ply_dir.mkdir(parents=True, exist_ok=True)
+
+    total = len(frame_paths)
+
+    # max_views가 지정되지 않았거나 total보다 크면 전체 처리
+    if max_views is None or max_views >= total:
+        max_views = total
+
+    # 청크 단위로 처리
+    all_world_points = []
+    all_world_colors = []
+
+    for chunk_start in range(0, total, max_views):
+        chunk_end = min(chunk_start + max_views, total)
+        chunk_paths = frame_paths[chunk_start:chunk_end]
+
+        print(f"  Multi-view 처리 중: 프레임 {chunk_start}~{chunk_end-1} ({len(chunk_paths)}개)")
+
+        # 이미지 로드 (모든 프레임을 한번에)
+        views = load_images(
+            [str(p) for p in chunk_paths],
+            resize_mode="fixed_mapping",
+            norm_type="dinov2",
+            verbose=False
+        )
+
+        # 추론 전처리
+        views = preprocess_input_views_for_inference(views)
+
+        # GPU로 이동
+        for view in views:
+            for key, value in view.items():
+                if isinstance(value, torch.Tensor):
+                    view[key] = value.to(device)
+
+        # 모델 추론 (모든 뷰를 한번에 - multi-view reconstruction)
+        with torch.no_grad():
+            with torch.autocast(device, dtype=torch.bfloat16):
+                outputs = model(views)
+
+        # 후처리
+        outputs = postprocess_model_outputs_for_inference(outputs, views)
+
+        # 각 프레임별 저장 + 통합 포인트 클라우드 수집
+        for j, (frame_path, output) in enumerate(zip(chunk_paths, outputs)):
+            frame_name = frame_path.stem
+            frame_idx = chunk_start + j
+
+            # Depth map 저장 (NPY)
+            if "depth_z" in output:
+                depth = output["depth_z"].cpu().numpy().squeeze()
+                depth_path = depth_dir / f"{frame_name}_depth.npy"
+                save_depth_npy(depth, depth_path)
+
+            # 포인트 클라우드 저장 (PLY) - 월드 좌표계 (pts3d)
+            if "pts3d" in output:
+                pts3d = output["pts3d"].cpu().numpy().squeeze()  # (H, W, 3)
+
+                # 색상 정보
+                if "img_no_norm" in output:
+                    colors = (output["img_no_norm"].cpu().numpy().squeeze() * 255).astype(np.uint8)
+                else:
+                    colors = None
+
+                # (H, W, 3) -> (N, 3)
+                pts3d_flat = pts3d.reshape(-1, 3)
+                colors_flat = colors.reshape(-1, 3) if colors is not None else None
+
+                # 개별 프레임 PLY 저장
+                ply_path = ply_dir / f"{frame_name}.ply"
+                save_pointcloud_ply(pts3d_flat, colors_flat, ply_path)
+
+                # 통합용 수집 (유효한 포인트만)
+                mask = np.any(pts3d_flat != 0, axis=-1)
+                all_world_points.append(pts3d_flat[mask])
+                if colors_flat is not None:
+                    all_world_colors.append(colors_flat[mask])
+
+            # Intrinsics 저장
+            if "intrinsics" in output:
+                intrinsics = output["intrinsics"].cpu().numpy().squeeze()
+                intrinsics_path = depth_dir / f"{frame_name}_intrinsics.npy"
+                np.save(intrinsics_path, intrinsics)
+
+            # 카메라 pose 저장 (있으면)
+            if "camera_poses" in output:
+                camera_pose = output["camera_poses"].cpu().numpy().squeeze()
+                pose_path = depth_dir / f"{frame_name}_pose.npy"
+                np.save(pose_path, camera_pose)
+
+        print(f"  처리 완료: {chunk_end}/{total} 프레임")
+
+        # GPU 메모리 정리
+        torch.cuda.empty_cache()
+
+    # 통합 포인트 클라우드 저장
+    if all_world_points:
+        combined_points = np.concatenate(all_world_points, axis=0)
+        combined_colors = np.concatenate(all_world_colors, axis=0) if all_world_colors else None
+        combined_ply_path = ply_dir / "combined_pointcloud.ply"
+        print(f"  통합 포인트 클라우드 저장 중... ({len(combined_points):,}개 포인트)")
+        save_pointcloud_ply(combined_points, combined_colors, combined_ply_path)
+
+
 def process_frames_batch(model, frame_paths, depth_dir, ply_dir, batch_size=1, device="cuda"):
-    """프레임 배치를 처리하여 depth map과 포인트 클라우드 생성
+    """프레임을 개별적으로 처리 (single-view, 레거시 호환용)
 
     Args:
         model: MapAnything 모델
@@ -194,7 +310,7 @@ def process_frames_batch(model, frame_paths, depth_dir, ply_dir, batch_size=1, d
         print(f"  처리 완료: {min(i+batch_size, total)}/{total} 프레임")
 
 
-def process_video(video_path, output_dir, model, device="cuda", frame_skip=1):
+def process_video(video_path, output_dir, model, device="cuda", frame_skip=1, max_views=None):
     """단일 비디오 처리
 
     Args:
@@ -203,6 +319,7 @@ def process_video(video_path, output_dir, model, device="cuda", frame_skip=1):
         model: MapAnything 모델
         device: 디바이스
         frame_skip: 프레임 건너뛰기 간격
+        max_views: 한번에 처리할 최대 뷰 수 (None이면 전체를 한번에)
 
     Returns:
         성공 여부
@@ -222,8 +339,8 @@ def process_video(video_path, output_dir, model, device="cuda", frame_skip=1):
         print(f"  Error: 프레임 추출 실패")
         return False
 
-    print(f"\n[2/2] Depth map 및 포인트 클라우드 생성 중...")
-    process_frames_batch(model, frame_paths, depth_dir, ply_dir, batch_size=1, device=device)
+    print(f"\n[2/2] Multi-view reconstruction 중... (총 {len(frame_paths)}개 프레임)")
+    process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device=device, max_views=max_views)
 
     print(f"\n출력 디렉토리: {video_output_dir}")
     return True
@@ -253,6 +370,12 @@ def main():
         type=int,
         default=1,
         help='프레임 건너뛰기 간격 (기본값: 1, 모든 프레임)'
+    )
+    parser.add_argument(
+        '--max-views',
+        type=int,
+        default=None,
+        help='한번에 처리할 최대 뷰 수 (기본값: None, 전체를 한번에 처리). GPU 메모리 부족 시 줄여서 사용'
     )
     parser.add_argument(
         '--device',
@@ -288,7 +411,7 @@ def main():
             sys.exit(1)
 
         print(f"\n처리 중: {video_path.name}")
-        if process_video(video_path, output_dir, model, args.device, args.frame_skip):
+        if process_video(video_path, output_dir, model, args.device, args.frame_skip, args.max_views):
             print("\n처리 완료!")
         else:
             sys.exit(1)
@@ -317,7 +440,7 @@ def main():
         print(f"[{idx}/{len(video_files)}] {video_file.name}")
         print("=" * 50)
 
-        if process_video(video_file, output_dir, model, args.device, args.frame_skip):
+        if process_video(video_file, output_dir, model, args.device, args.frame_skip, args.max_views):
             success_count += 1
 
     print(f"\n{'=' * 50}")
