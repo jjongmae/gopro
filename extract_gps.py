@@ -175,7 +175,11 @@ def process_video(video_path, output_dir, output_format):
 
     print(f"  ✓ Extracted {len(gps_data)} GPS points")
 
-    output_path = output_dir / f"{video_path.stem}_gps.{output_format}"
+    # 동영상별 하위 폴더 생성
+    video_output_dir = output_dir / video_path.stem
+    video_output_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = video_output_dir / f"{video_path.stem}_gps.{output_format}"
 
     if output_format == 'json':
         save_to_json(gps_data, output_path)
@@ -226,8 +230,8 @@ def main():
     )
     parser.add_argument(
         '-o', '--output',
-        help='출력 폴더 경로 (기본값: ./shp)',
-        default='./shp'
+        help='출력 폴더 경로 (기본값: ./gps_output)',
+        default='./gps_output'
     )
     parser.add_argument(
         '-f', '--format',
