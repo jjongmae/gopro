@@ -114,7 +114,7 @@ def save_pointcloud_ply(points, colors, output_path):
                 f.write(f"{x:.6f} {y:.6f} {z:.6f}\n")
 
 
-def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cuda", max_views=None):
+def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cuda", max_views=None, overlap=0):
     """여러 프레임을 한번에 처리하여 정렬된 depth map과 포인트 클라우드 생성 (Multi-view reconstruction)
 
     Args:
@@ -124,7 +124,10 @@ def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cud
         ply_dir: 포인트 클라우드 저장 디렉토리
         device: 디바이스 (cuda/cpu)
         max_views: 한번에 처리할 최대 뷰 수 (None이면 전체)
+        overlap: 청크 간 오버랩 프레임 수
     """
+    import json
+
     depth_dir.mkdir(parents=True, exist_ok=True)
     ply_dir.mkdir(parents=True, exist_ok=True)
 
@@ -134,15 +137,44 @@ def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cud
     if max_views is None or max_views >= total:
         max_views = total
 
-    # 청크 단위로 처리
-    all_world_points = []
-    all_world_colors = []
+    # 오버랩 검증
+    if overlap >= max_views:
+        print(f"  Warning: overlap({overlap})이 max_views({max_views})보다 크거나 같아 0으로 설정")
+        overlap = 0
 
-    for chunk_start in range(0, total, max_views):
+    # 청크 간 이동 간격 (오버랩 적용)
+    step = max_views - overlap if overlap > 0 else max_views
+
+    # 청크 메타데이터 저장용
+    chunks_metadata = {
+        "total_frames": total,
+        "max_views": max_views,
+        "overlap": overlap,
+        "step": step,
+        "chunks": []
+    }
+
+    # 청크 단위로 처리
+    chunk_idx = 0
+    for chunk_start in range(0, total, step):
         chunk_end = min(chunk_start + max_views, total)
         chunk_paths = frame_paths[chunk_start:chunk_end]
 
-        print(f"  Multi-view 처리 중: 프레임 {chunk_start}~{chunk_end-1} ({len(chunk_paths)}개)")
+        # 청크별 디렉토리 생성
+        chunk_dir = ply_dir / f"chunk_{chunk_idx:03d}"
+        chunk_dir.mkdir(parents=True, exist_ok=True)
+
+        # 청크 메타데이터 기록
+        chunk_info = {
+            "chunk_idx": chunk_idx,
+            "frame_start": chunk_start,
+            "frame_end": chunk_end - 1,
+            "frame_count": len(chunk_paths),
+            "frames": [p.stem for p in chunk_paths]
+        }
+        chunks_metadata["chunks"].append(chunk_info)
+
+        print(f"  Multi-view 처리 중: 청크 {chunk_idx} (프레임 {chunk_start}~{chunk_end-1}, {len(chunk_paths)}개)")
 
         # 이미지 로드 (모든 프레임을 한번에)
         views = load_images(
@@ -194,15 +226,9 @@ def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cud
                 pts3d_flat = pts3d.reshape(-1, 3)
                 colors_flat = colors.reshape(-1, 3) if colors is not None else None
 
-                # 개별 프레임 PLY 저장
-                ply_path = ply_dir / f"{frame_name}.ply"
+                # 개별 프레임 PLY 저장 (청크별 디렉토리에)
+                ply_path = chunk_dir / f"{frame_name}.ply"
                 save_pointcloud_ply(pts3d_flat, colors_flat, ply_path)
-
-                # 통합용 수집 (유효한 포인트만)
-                mask = np.any(pts3d_flat != 0, axis=-1)
-                all_world_points.append(pts3d_flat[mask])
-                if colors_flat is not None:
-                    all_world_colors.append(colors_flat[mask])
 
             # Intrinsics 저장
             if "intrinsics" in output:
@@ -216,18 +242,18 @@ def process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device="cud
                 pose_path = depth_dir / f"{frame_name}_pose.npy"
                 np.save(pose_path, camera_pose)
 
-        print(f"  처리 완료: {chunk_end}/{total} 프레임")
+        print(f"  처리 완료: 청크 {chunk_idx} ({chunk_end}/{total} 프레임)")
 
         # GPU 메모리 정리
         torch.cuda.empty_cache()
 
-    # 통합 포인트 클라우드 저장
-    if all_world_points:
-        combined_points = np.concatenate(all_world_points, axis=0)
-        combined_colors = np.concatenate(all_world_colors, axis=0) if all_world_colors else None
-        combined_ply_path = ply_dir / "combined_pointcloud.ply"
-        print(f"  통합 포인트 클라우드 저장 중... ({len(combined_points):,}개 포인트)")
-        save_pointcloud_ply(combined_points, combined_colors, combined_ply_path)
+        chunk_idx += 1
+
+    # 청크 메타데이터 저장
+    chunks_json_path = ply_dir / "chunks.json"
+    with open(chunks_json_path, 'w', encoding='utf-8') as f:
+        json.dump(chunks_metadata, f, indent=2, ensure_ascii=False)
+    print(f"  청크 메타데이터 저장: {chunks_json_path}")
 
 
 def process_frames_batch(model, frame_paths, depth_dir, ply_dir, batch_size=1, device="cuda"):
@@ -310,7 +336,7 @@ def process_frames_batch(model, frame_paths, depth_dir, ply_dir, batch_size=1, d
         print(f"  처리 완료: {min(i+batch_size, total)}/{total} 프레임")
 
 
-def process_video(video_path, output_dir, model, device="cuda", frame_skip=1, max_views=None):
+def process_video(video_path, output_dir, model, device="cuda", frame_skip=1, max_views=None, overlap=0):
     """단일 비디오 처리
 
     Args:
@@ -320,6 +346,7 @@ def process_video(video_path, output_dir, model, device="cuda", frame_skip=1, ma
         device: 디바이스
         frame_skip: 프레임 건너뛰기 간격
         max_views: 한번에 처리할 최대 뷰 수 (None이면 전체를 한번에)
+        overlap: 청크 간 오버랩 프레임 수
 
     Returns:
         성공 여부
@@ -340,7 +367,7 @@ def process_video(video_path, output_dir, model, device="cuda", frame_skip=1, ma
         return False
 
     print(f"\n[2/2] Multi-view reconstruction 중... (총 {len(frame_paths)}개 프레임)")
-    process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device=device, max_views=max_views)
+    process_frames_multiview(model, frame_paths, depth_dir, ply_dir, device=device, max_views=max_views, overlap=overlap)
 
     print(f"\n출력 디렉토리: {video_output_dir}")
     return True
@@ -374,8 +401,14 @@ def main():
     parser.add_argument(
         '--max-views',
         type=int,
-        default=None,
-        help='한번에 처리할 최대 뷰 수 (기본값: None, 전체를 한번에 처리). GPU 메모리 부족 시 줄여서 사용'
+        default=50,
+        help='한번에 처리할 최대 뷰 수 (기본값: 50). GPU 메모리에 따라 조절'
+    )
+    parser.add_argument(
+        '--overlap',
+        type=int,
+        default=10,
+        help='청크 간 오버랩 프레임 수 (기본값: 10). 정합 품질 향상용'
     )
     parser.add_argument(
         '--device',
@@ -411,7 +444,7 @@ def main():
             sys.exit(1)
 
         print(f"\n처리 중: {video_path.name}")
-        if process_video(video_path, output_dir, model, args.device, args.frame_skip, args.max_views):
+        if process_video(video_path, output_dir, model, args.device, args.frame_skip, args.max_views, args.overlap):
             print("\n처리 완료!")
         else:
             sys.exit(1)
@@ -440,7 +473,7 @@ def main():
         print(f"[{idx}/{len(video_files)}] {video_file.name}")
         print("=" * 50)
 
-        if process_video(video_file, output_dir, model, args.device, args.frame_skip, args.max_views):
+        if process_video(video_file, output_dir, model, args.device, args.frame_skip, args.max_views, args.overlap):
             success_count += 1
 
     print(f"\n{'=' * 50}")
