@@ -268,9 +268,37 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
             }
         """)
-        
+
+        self.btn_delete = QPushButton("측정값 삭제")
+        self.btn_delete.clicked.connect(self.delete_measurement)
+        self.btn_delete.setStyleSheet("""
+            QPushButton {
+                background-color: #f44336;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #d32f2f;
+            }
+        """)
+
+        self.btn_export = QPushButton("내보내기")
+        self.btn_export.clicked.connect(self.export_measurements)
+        self.btn_export.setStyleSheet("""
+            QPushButton {
+                background-color: #2196F3;
+                color: white;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: #1976D2;
+            }
+        """)
+
         control_layout.addWidget(self.btn_prev)
         control_layout.addWidget(self.btn_toggle_depth)
+        control_layout.addWidget(self.btn_delete)
+        control_layout.addWidget(self.btn_export)
         control_layout.addWidget(self.btn_next)
         
         right_layout.addLayout(control_layout)
@@ -623,9 +651,153 @@ class MainWindow(QMainWindow):
                 writer.writerows(existing_data)
             
             print(f"[INFO] 측정값 저장 완료: {frame_name} -> {m['distance']:.2f}m")
-            
+
         except Exception as e:
             print(f"[ERROR] 파일 저장 중 오류: {e}")
+
+    def delete_measurement(self):
+        """현재 프레임의 측정값을 삭제"""
+        if not self.current_video_dir or not self.image_files:
+            return
+
+        frame_name = self.image_files[self.current_idx].stem
+        csv_path = self.current_video_dir / "measurements" / "width_measurements.csv"
+
+        if not csv_path.exists():
+            self.info_label.setText("삭제할 측정값이 없습니다.")
+            return
+
+        try:
+            # 기존 데이터 읽기
+            existing_data = []
+            found = False
+
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    if row['Frame'] == frame_name:
+                        found = True  # 해당 프레임 데이터 발견 (삭제 대상)
+                    else:
+                        existing_data.append(row)
+
+            if not found:
+                self.info_label.setText("삭제할 측정값이 없습니다.")
+                return
+
+            # 파일에 다시 쓰기 (삭제된 데이터 제외)
+            with open(csv_path, 'w', newline='', encoding='utf-8') as f:
+                fieldnames = ['Frame', 'P1_X', 'P1_Y', 'P2_X', 'P2_Y',
+                             'P1_Depth', 'P2_Depth', 'Distance_Meter']
+                writer = csv.DictWriter(f, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerows(existing_data)
+
+            # 화면에서 점과 선 제거
+            self.image_label.points = []
+            self.image_label.update()
+
+            # 정보 라벨 초기화
+            self.current_measurement = None
+            self.info_label.setText(f"측정값이 삭제되었습니다: {frame_name}")
+
+            print(f"[INFO] 측정값 삭제 완료: {frame_name}")
+
+        except Exception as e:
+            print(f"[ERROR] 측정값 삭제 중 오류: {e}")
+            self.info_label.setText(f"삭제 오류: {str(e)}")
+
+    def export_measurements(self):
+        """측정값이 있는 모든 이미지를 오버레이와 함께 내보내기"""
+        if not self.current_video_dir or not self.frames_dir:
+            QMessageBox.warning(self, "경고", "먼저 폴더를 열어주세요.")
+            return
+
+        csv_path = self.current_video_dir / "measurements" / "width_measurements.csv"
+
+        if not csv_path.exists():
+            QMessageBox.warning(self, "경고", "저장된 측정값이 없습니다.")
+            return
+
+        try:
+            # 측정 데이터 로드
+            measurements = {}
+            with open(csv_path, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    measurements[row['Frame']] = row
+
+            if not measurements:
+                QMessageBox.warning(self, "경고", "저장된 측정값이 없습니다.")
+                return
+
+            # 내보내기 폴더 생성
+            export_dir = self.current_video_dir / "export"
+            export_dir.mkdir(exist_ok=True)
+
+            exported_count = 0
+
+            for frame_name, data in measurements.items():
+                # 원본 이미지 로드
+                img_path = self.frames_dir / f"{frame_name}.jpg"
+                if not img_path.exists():
+                    print(f"[WARNING] 이미지 파일 없음: {img_path}")
+                    continue
+
+                img = cv2.imread(str(img_path))
+                if img is None:
+                    print(f"[WARNING] 이미지 로드 실패: {img_path}")
+                    continue
+
+                # 좌표 및 거리 정보 추출
+                p1 = (int(data['P1_X']), int(data['P1_Y']))
+                p2 = (int(data['P2_X']), int(data['P2_Y']))
+                distance = float(data['Distance_Meter'])
+
+                # 점 그리기 (빨간색 원)
+                cv2.circle(img, p1, 10, (0, 0, 255), -1)  # 빨간색 채워진 원
+                cv2.circle(img, p2, 10, (0, 0, 255), -1)
+                cv2.circle(img, p1, 10, (255, 255, 255), 2)  # 흰색 테두리
+                cv2.circle(img, p2, 10, (255, 255, 255), 2)
+
+                # 선 그리기 (노란색)
+                cv2.line(img, p1, p2, (0, 255, 255), 3)
+
+                # 거리 텍스트 표시
+                mid_x = (p1[0] + p2[0]) // 2
+                mid_y = (p1[1] + p2[1]) // 2
+                text = f"{distance:.2f}m"
+
+                # 텍스트 배경 (가독성 향상)
+                font = cv2.FONT_HERSHEY_SIMPLEX
+                font_scale = 1.5
+                thickness = 3
+                (text_w, text_h), baseline = cv2.getTextSize(text, font, font_scale, thickness)
+
+                # 배경 박스
+                padding = 10
+                cv2.rectangle(img,
+                             (mid_x - text_w // 2 - padding, mid_y - text_h - padding),
+                             (mid_x + text_w // 2 + padding, mid_y + padding),
+                             (0, 0, 0), -1)
+
+                # 텍스트 (흰색)
+                cv2.putText(img, text,
+                           (mid_x - text_w // 2, mid_y),
+                           font, font_scale, (255, 255, 255), thickness)
+
+                # 이미지 저장
+                output_path = export_dir / f"{frame_name}.jpg"
+                cv2.imwrite(str(output_path), img)
+                exported_count += 1
+                print(f"[INFO] 내보내기 완료: {output_path.name}")
+
+            # 완료 메시지
+            QMessageBox.information(self, "내보내기 완료",
+                                   f"{exported_count}개의 이미지가 내보내기 되었습니다.\n\n저장 위치: {export_dir}")
+
+        except Exception as e:
+            print(f"[ERROR] 내보내기 중 오류: {e}")
+            QMessageBox.critical(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{str(e)}")
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)
