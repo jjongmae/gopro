@@ -138,6 +138,45 @@ python update_shp_with_width.py -v GH013057
 **결과물:**
 - `gps_output/비디오이름/비디오이름_gps.shp` 파일에 `road_width` 필드가 추가되고, 측정된 값(미터)이 저장됩니다.
 
+### 5. 포인트 클라우드 정합 (align_pointcloud.py)
+
+청크별로 분리된 포인트 클라우드를 Umeyama 알고리즘으로 정합하여 하나의 통합된 포인트 클라우드를 생성합니다.
+
+```bash
+# 기본 사용
+python align_pointcloud.py -i map_output/비디오이름/pointcloud
+
+# 출력 경로 지정
+python align_pointcloud.py -i map_output/비디오이름/pointcloud -o output.ply
+
+# 상세 로그 숨기기
+python align_pointcloud.py -i map_output/비디오이름/pointcloud -q
+```
+
+**주요 기능:**
+- **Umeyama 알고리즘**: 오버랩 프레임을 이용하여 인접 청크 간 최적의 rigid transformation 계산
+- **자동 정합**: 모든 청크를 첫 번째 청크의 좌표계로 자동 통합
+- **중복 제거**: 오버랩 영역의 중복 포인트 자동 제거
+- **색상 보존**: 원본 포인트의 RGB 색상 정보 유지
+
+**옵션:**
+- `-i, --input`: pointcloud 디렉토리 경로 (chunks.json이 있는 디렉토리) [필수]
+- `-o, --output`: 출력 PLY 파일 경로 (기본값: input/aligned_combined.ply)
+- `-q, --quiet`: 상세 로그 출력 안 함
+
+**처리 과정:**
+1. `chunks.json` 메타데이터에서 청크 정보 로드
+2. 인접 청크 간 오버랩 프레임에서 대응점 추출
+3. Umeyama 알고리즘으로 변환 행렬(회전 + 이동) 계산
+4. 누적 변환을 적용하여 모든 청크를 첫 번째 청크 좌표계로 통합
+5. 중복 프레임 제거 후 최종 PLY 파일 저장
+
+**출력 파일:**
+- `map_output/비디오이름/pointcloud/aligned_combined.ply`: 정합된 통합 포인트 클라우드
+
+**참고:**
+- 청크가 1개만 있는 경우 정합 없이 모든 포인트를 단순 병합합니다.
+- 오버랩 프레임이 없는 청크 간에는 이전 변환을 그대로 사용하여 드리프트가 발생할 수 있습니다.
 
 
 ## 출력 형식
