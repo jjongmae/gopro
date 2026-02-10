@@ -32,14 +32,18 @@ gopro/
 ├── video/              # GoPro 영상 파일을 여기에 넣으세요
 ├── gps_output/         # GPS 데이터 출력
 │   └── 동영상이름/
-│       └── 동영상이름_gps.shp
+│       ├── 동영상이름_gps.shp
+│       └── gps_path.json       # 전처리된 GPS 경로 데이터
 ├── map_output/         # Depth map 출력
 │   └── 동영상이름/
 │       ├── frames/     # 원본 프레임 이미지
 │       ├── depth/      # Depth map (.npy) + Intrinsics
 │       └── pointcloud/ # 포인트 클라우드 (.ply)
+│       └── aligned_final.ply   # 최종 정합된 포인트 클라우드
 ├── extract_gps.py      # GPS 추출 스크립트
 ├── extract_depth.py    # Depth map 추출 스크립트
+├── preprocess_gps.py   # GPS 데이터 전처리 스크립트
+├── align_by_gps.py     # GPS 기반 정합 스크립트
 └── requirements.txt
 ```
 
@@ -138,45 +142,46 @@ python update_shp_with_width.py -v GH013057
 **결과물:**
 - `gps_output/비디오이름/비디오이름_gps.shp` 파일에 `road_width` 필드가 추가되고, 측정된 값(미터)이 저장됩니다.
 
-### 5. 포인트 클라우드 정합 (align_pointcloud.py)
+### 5. GPS 기반 포인트 클라우드 정합
 
-청크별로 분리된 포인트 클라우드를 Umeyama 알고리즘으로 정합하여 하나의 통합된 포인트 클라우드를 생성합니다.
+기존의 단순 정합 방식(`align_pointcloud.py`) 대신, GPS 경로 데이터를 기반으로 더욱 정확한 대규모 정합을 수행합니다. 이 과정은 **전처리**와 **정합** 두 단계로 나뉩니다.
+
+#### 5-1. GPS 데이터 전처리 (preprocess_gps.py)
+
+Shapefile(.shp) 형식의 GPS 데이터를 읽어 노이즈를 제거하고, 미터 단위의 로컬 좌표계로 변환합니다.
 
 ```bash
-# 기본 사용
-python align_pointcloud.py -i map_output/비디오이름/pointcloud
+# 기본 사용 (모든 비디오 처리)
+python preprocess_gps.py
 
-# 출력 경로 지정
-python align_pointcloud.py -i map_output/비디오이름/pointcloud -o output.ply
-
-# 상세 로그 숨기기
-python align_pointcloud.py -i map_output/비디오이름/pointcloud -q
+# 특정 비디오 처리
+python preprocess_gps.py --video GH013057
 ```
 
-**주요 기능:**
-- **Umeyama 알고리즘**: 오버랩 프레임을 이용하여 인접 청크 간 최적의 rigid transformation 계산
-- **자동 정합**: 모든 청크를 첫 번째 청크의 좌표계로 자동 통합
-- **중복 제거**: 오버랩 영역의 중복 포인트 자동 제거
-- **색상 보존**: 원본 포인트의 RGB 색상 정보 유지
+**기능:**
+- **노이즈 제거**: 이동 평균 필터(Moving Average)를 적용하여 GPS 튀는 현상 보정
+- **좌표 변환**: 위도/경도를 미터 단위(Local ENU)로 변환
+- **데이터 생성**: 정합에 필요한 `gps_path.json` 파일 생성
 
-**옵션:**
-- `-i, --input`: pointcloud 디렉토리 경로 (chunks.json이 있는 디렉토리) [필수]
-- `-o, --output`: 출력 PLY 파일 경로 (기본값: input/aligned_combined.ply)
-- `-q, --quiet`: 상세 로그 출력 안 함
+#### 5-2. 정합 실행 (align_by_gps.py)
 
-**처리 과정:**
-1. `chunks.json` 메타데이터에서 청크 정보 로드
-2. 인접 청크 간 오버랩 프레임에서 대응점 추출
-3. Umeyama 알고리즘으로 변환 행렬(회전 + 이동) 계산
-4. 누적 변환을 적용하여 모든 청크를 첫 번째 청크 좌표계로 통합
-5. 중복 프레임 제거 후 최종 PLY 파일 저장
+전처리된 GPS 경로(`gps_path.json`)를 기반으로 분할된 포인트 클라우드 청크들을 하나의 전체 지도로 통합합니다.
+
+```bash
+# 기본 사용 (모든 비디오 처리)
+python align_by_gps.py
+
+# 특정 비디오 처리
+python align_by_gps.py --video GH013057
+```
+
+**기능:**
+- **No-Overlap 최적화**: 오버랩이 없는 영상에서도 GPS 경로를 따라 자연스럽게 이어지도록 정합
+- **스케일 보정**: GPS 이동 거리와 Visual Odometry 이동 거리를 비교하여 스케일 자동 보정
+- **좌표계 통합**: 모든 청크를 실제 지리적 위치(GPS) 기반의 좌표계로 변환
 
 **출력 파일:**
-- `map_output/비디오이름/pointcloud/aligned_combined.ply`: 정합된 통합 포인트 클라우드
-
-**참고:**
-- 청크가 1개만 있는 경우 정합 없이 모든 포인트를 단순 병합합니다.
-- 오버랩 프레임이 없는 청크 간에는 이전 변환을 그대로 사용하여 드리프트가 발생할 수 있습니다.
+- `map_output/비디오이름/aligned_final.ply`: GPS 좌표계로 통합된 최종 포인트 클라우드
 
 
 ## 출력 형식
@@ -224,4 +229,5 @@ python align_pointcloud.py -i map_output/비디오이름/pointcloud -q
 
 - `.mp4`, `.MP4`
 - `.mov`, `.MOV`
+
 

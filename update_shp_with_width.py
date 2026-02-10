@@ -68,15 +68,9 @@ def update_shapefile_with_width(shp_path, measurements, output_path=None):
     """
     # 출력 경로 설정
     if output_path is None:
-        # 원본 파일 백업
-        backup_path = shp_path.replace('.shp', '_backup.shp')
-        for ext in ['.shp', '.shx', '.dbf', '.prj']:
-            src = shp_path.replace('.shp', ext)
-            dst = backup_path.replace('.shp', ext)
-            if os.path.exists(src):
-                shutil.copy2(src, dst)
-        print(f"✓ 원본 파일을 백업했습니다: {backup_path}")
-        output_path = shp_path
+        # 원본 파일명 기반으로 새 파일명 생성 (예: video_id_gps_width.shp)
+        output_path = shp_path.replace('.shp', '_width.shp')
+        print(f"✓ 새 파일로 저장합니다: {output_path}")
     
     # 원본 Shapefile 읽기
     sf = shapefile.Reader(shp_path)
@@ -94,7 +88,9 @@ def update_shapefile_with_width(shp_path, measurements, output_path=None):
         road_width_exists = False
     
     # 새 Shapefile 작성
-    w = shapefile.Writer(output_path.replace('.shp', '_temp.shp'))
+    # temp 파일로 먼저 작성
+    temp_shp_path = output_path.replace('.shp', '_temp.shp')
+    w = shapefile.Writer(temp_shp_path)
     
     # 필드 정의 복사
     for field in fields:
@@ -143,6 +139,7 @@ def update_shapefile_with_width(shp_path, measurements, output_path=None):
     sf.close()
     
     # 임시 파일을 최종 파일로 이동
+    # .shp, .shx, .dbf 파일 이동
     for ext in ['.shp', '.shx', '.dbf']:
         temp_file = output_path.replace('.shp', f'_temp{ext}')
         final_file = output_path.replace('.shp', ext)
@@ -154,6 +151,12 @@ def update_shapefile_with_width(shp_path, measurements, output_path=None):
     prj_dst = output_path.replace('.shp', '.prj')
     if os.path.exists(prj_src) and prj_src != prj_dst:
         shutil.copy2(prj_src, prj_dst)
+        
+    # .cpg 파일이 있다면 복사 (인코딩 정보)
+    cpg_src = shp_path.replace('.shp', '.cpg')
+    cpg_dst = output_path.replace('.shp', '.cpg')
+    if os.path.exists(cpg_src) and cpg_src != cpg_dst:
+        shutil.copy2(cpg_src, cpg_dst)
     
     print(f"✓ Shapefile 업데이트 완료:")
     print(f"  - 저장된 레코드: {matched_count}개")
@@ -196,8 +199,9 @@ def process_video(video_id, base_dir='.'):
     # 측정 데이터 읽기
     measurements = read_width_measurements(csv_path)
     
-    # Shapefile 업데이트
-    update_shapefile_with_width(str(shp_path), measurements)
+    # Shapefile 업데이트 (새 파일로 저장)
+    output_shp_path = str(shp_path).replace('.shp', '_width.shp')
+    update_shapefile_with_width(str(shp_path), measurements, output_path=output_shp_path)
     
     print(f"\n✓ {video_id} 처리 완료!\n")
     return True
