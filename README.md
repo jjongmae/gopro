@@ -29,21 +29,30 @@ pip install "git+https://github.com/facebookresearch/map-anything.git"
 
 ```
 gopro/
-├── video/              # GoPro 영상 파일을 여기에 넣으세요
-├── gps_output/         # GPS 데이터 출력
+├── video/                    # GoPro 영상 파일을 여기에 넣으세요
+├── gps_output/               # GPS 데이터 출력
 │   └── 동영상이름/
 │       ├── 동영상이름_gps.shp
-│       └── gps_path.json       # 전처리된 GPS 경로 데이터
-├── map_output/         # Depth map 출력
+│       ├── 동영상이름_gps_width.shp  # 도로 폭이 추가된 Shapefile
+│       └── gps_path.json             # 전처리된 GPS 경로 데이터
+├── map_output/               # Depth map 출력
 │   └── 동영상이름/
-│       ├── frames/     # 원본 프레임 이미지
-│       ├── depth/      # Depth map (.npy) + Intrinsics
-│       └── pointcloud/ # 포인트 클라우드 (.ply)
-│       └── aligned_final.ply   # 최종 정합된 포인트 클라우드
-├── extract_gps.py      # GPS 추출 스크립트
-├── extract_depth.py    # Depth map 추출 스크립트
-├── preprocess_gps.py   # GPS 데이터 전처리 스크립트
-├── align_by_gps.py     # GPS 기반 정합 스크립트
+│       ├── frames/           # 원본 프레임 이미지
+│       ├── depth/            # Depth map (.npy) + Intrinsics + Pose
+│       ├── pointcloud/       # 포인트 클라우드
+│       │   ├── chunk_000/    # 청크별 분리된 포인트 클라우드 (.ply)
+│       │   ├── chunk_001/
+│       │   └── chunks.json   # 청크 메타데이터
+│       ├── measurements/     # 도로 폭 측정 데이터
+│       │   └── width_measurements.csv
+│       ├── export/           # 측정 결과 이미지 내보내기
+│       └── aligned_final.ply # 최종 정합된 포인트 클라우드
+├── extract_gps.py            # GPS 추출 스크립트
+├── extract_depth.py          # Depth map 추출 스크립트
+├── measure_width.py          # 도로 폭 측정 GUI
+├── update_shp_with_width.py  # 도로 폭 → Shapefile 병합
+├── preprocess_gps.py         # GPS 데이터 전처리 스크립트
+├── align_by_gps.py           # GPS 기반 정합 스크립트
 └── requirements.txt
 ```
 
@@ -78,6 +87,9 @@ python extract_depth.py --single video/GH013057.MP4
 
 # 옵션
 python extract_depth.py -i ./video -o ./map_output --frame-skip 1 --device cuda
+
+# 청크 크기 및 오버랩 설정
+python extract_depth.py --max-views 50 --overlap 0
 ```
 
 **옵션:**
@@ -85,7 +97,14 @@ python extract_depth.py -i ./video -o ./map_output --frame-skip 1 --device cuda
 - `-o, --output`: 출력 폴더 (기본값: ./map_output)
 - `--single`: 단일 파일 처리
 - `--frame-skip`: 프레임 건너뛰기 간격 (기본값: 1, 모든 프레임)
+- `--max-views`: 청크당 최대 프레임 수 (기본값: 50)
+- `--overlap`: 청크 간 오버랩 프레임 수 (기본값: 0, GPS 정합용)
 - `--device`: cuda 또는 cpu (기본값: cuda)
+
+**청크 시스템:**
+- 대용량 영상을 `--max-views` 단위로 분할하여 처리
+- 각 청크는 `pointcloud/chunk_XXX/` 디렉토리에 개별 저장
+- `chunks.json` 파일에 청크 메타데이터 기록 (프레임 범위, 프레임 수 등)
 
 ### 3. 도로 너비 측정 GUI (measure_width.py)
 
@@ -102,6 +121,8 @@ python measure_width.py
 - 🎨 **Depth 맵 시각화**: 컬러맵으로 depth 정보를 오버레이 표시
 - 🔄 **측정값 복원**: 이전/다음 프레임 이동 시 저장된 측정값 자동 표시
 - 🔧 **자동 보간**: Depth 값이 0인 픽셀은 주변 5x5 영역의 평균값으로 자동 보간
+- 🗑️ **측정값 삭제**: 현재 프레임의 측정값을 삭제
+- 📤 **이미지 내보내기**: 측정 결과를 이미지에 오버레이하여 내보내기
 
 **사용 방법:**
 1. 프로그램 실행 후 **"폴더 열기"** 버튼 클릭
@@ -110,7 +131,9 @@ python measure_width.py
 4. 이미지 상에서 측정할 **두 지점 클릭** (빨간 점과 노란 선 생성)
 5. 화면에 거리(미터) 즉시 표시 및 자동 저장
 6. **"Depth 맵 표시"** 버튼으로 depth 정보 시각화 가능
-7. 이전/다음 버튼으로 프레임 이동 시 저장된 측정값 자동 표시
+7. **"측정값 삭제"** 버튼으로 현재 프레임 측정값 삭제
+8. **"내보내기"** 버튼으로 측정된 모든 이미지를 오버레이와 함께 저장
+9. 이전/다음 버튼으로 프레임 이동 시 저장된 측정값 자동 표시
 
 **출력 파일:**
 - `map_output/비디오이름/measurements/width_measurements.csv`
@@ -119,10 +142,11 @@ python measure_width.py
   - P2_X, P2_Y: 두 번째 점 좌표
   - P1_Depth, P2_Depth: 각 점의 깊이(미터)
   - Distance_Meter: 측정된 거리(미터)
+- `map_output/비디오이름/export/`: 측정 결과가 오버레이된 이미지 파일들
 
 ### 4. Shapefile에 도로 폭 병합 (update_shp_with_width.py)
 
-측정된 도로 폭 데이터(CSV)를 GPS Shapefile에 병합하여 하나의 파일로 만듭니다.
+측정된 도로 폭 데이터(CSV)를 GPS Shapefile에 병합하여 새로운 파일로 저장합니다.
 
 ```bash
 # 기본 사용 (모든 비디오 처리)
@@ -137,10 +161,10 @@ python update_shp_with_width.py -v GH013057
 **주요 기능:**
 - **데이터 매핑:** CSV의 프레임 번호와 Shapefile의 `frame_idx`를 자동으로 매칭
 - **자동 필터링:** 도로 폭 측정값이 없는 GPS 포인트는 Shapefile에서 **자동으로 삭제**합니다. (측정된 지점만 남김)
-- **백업 생성:** 원본 Shapefile은 `_backup.shp`로 자동 백업됩니다.
+- **원본 보존:** 원본 Shapefile은 그대로 유지되고, 새로운 `_width.shp` 파일이 생성됩니다.
 
 **결과물:**
-- `gps_output/비디오이름/비디오이름_gps.shp` 파일에 `road_width` 필드가 추가되고, 측정된 값(미터)이 저장됩니다.
+- `gps_output/비디오이름/비디오이름_gps_width.shp`: `road_width` 필드가 추가된 새 Shapefile (측정된 지점만 포함)
 
 ### 5. GPS 기반 포인트 클라우드 정합
 
