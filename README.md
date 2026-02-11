@@ -46,13 +46,16 @@ gopro/
 │       ├── measurements/     # 도로 폭 측정 데이터
 │       │   └── width_measurements.csv
 │       ├── export/           # 측정 결과 이미지 내보내기
-│       └── aligned_final.ply # 최종 정합된 포인트 클라우드
+│       ├── aligned_final.ply # 최종 정합된 포인트 클라우드
+│       └── aligned_global.ply # UTM 전역 좌표 포인트 클라우드
 ├── extract_gps.py            # GPS 추출 스크립트
 ├── extract_depth.py          # Depth map 추출 스크립트
 ├── measure_width.py          # 도로 폭 측정 GUI
 ├── update_shp_with_width.py  # 도로 폭 → Shapefile 병합
 ├── preprocess_gps.py         # GPS 데이터 전처리 스크립트
 ├── align_by_gps.py           # GPS 기반 정합 스크립트
+├── convert_to_global.py      # 전역 UTM 좌표 변환 스크립트
+├── merge_global.py           # 전역 포인트 클라우드 병합 스크립트
 └── requirements.txt
 ```
 
@@ -206,6 +209,61 @@ python align_by_gps.py --video GH013057
 
 **출력 파일:**
 - `map_output/비디오이름/aligned_final.ply`: GPS 좌표계로 통합된 최종 포인트 클라우드
+
+### 6. 전역 좌표 변환 및 병합
+
+여러 비디오에서 생성된 포인트 클라우드를 전역 UTM 좌표로 변환하여 CloudCompare에서 자동 정렬되도록 합니다.
+
+#### 6-1. 전역 좌표 변환 (convert_to_global.py)
+
+로컬 좌표계의 `aligned_final.ply`를 전역 UTM 좌표로 변환합니다.
+
+```bash
+# 전체 비디오 처리
+python convert_to_global.py
+
+# 특정 비디오 처리
+python convert_to_global.py --video GH013057
+```
+
+**기능:**
+- GPS origin 위치를 UTM 좌표로 변환
+- 로컬 좌표에 UTM 오프셋 적용
+- CloudCompare에서 여러 파일을 열면 실제 위치에 자동 배치
+
+**출력 파일:**
+- `map_output/비디오이름/aligned_global.ply`: UTM 전역 좌표 포인트 클라우드
+
+**의존성:**
+```bash
+pip install pyproj
+```
+
+#### 6-2. 전역 포인트 클라우드 병합 (merge_global.py)
+
+여러 비디오의 `aligned_global.ply` 파일을 하나의 파일로 병합합니다.
+
+```bash
+# 기본 병합
+python merge_global.py
+
+# 출력 파일명 지정
+python merge_global.py --output my_merged.ply
+
+# 높이 필터링 (지면 기준 3m 이상 제거 - 나무 등 제거용)
+python merge_global.py --max-height 3
+
+# 지면 계산 셀 크기 조정 (기본값: 5m)
+python merge_global.py --max-height 3 --cell-size 10
+```
+
+**기능:**
+- 스트리밍 방식으로 대용량 파일 처리
+- 선택적 높이 필터링 (나무, 건물 등 제거)
+- 그리드 기반 지면 높이 자동 계산
+
+**출력 파일:**
+- `merged_global.ply`: 모든 비디오가 병합된 최종 포인트 클라우드
 
 
 ## 출력 형식
