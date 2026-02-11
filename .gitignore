@@ -2,6 +2,7 @@
 video/
 gps_output/
 map_output/
+*.ply
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
