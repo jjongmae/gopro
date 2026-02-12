@@ -78,7 +78,7 @@ class ImageLabel(QLabel):
         valid_depths = depth_map[depth_map > 0]
         
         if len(valid_depths) == 0:
-            print("[WARNING] Depth 맵에 유효한 값이 없습니다.")
+            print("[경고] Depth 맵에 유효한 값이 없습니다.")
             self.depth_overlay = None
             return
         
@@ -378,12 +378,12 @@ class MainWindow(QMainWindow):
                 try:
                     depth_map = np.load(depth_path)
                     self.image_label.set_depth_map(depth_map)
-                    print(f"[INFO] Depth 맵 로드 완료: {depth_path.name}")
+                    print(f"[정보] Depth 맵 로드 완료: {depth_path.name}")
                 except Exception as e:
-                    print(f"[ERROR] Depth 맵 로드 실패: {e}")
+                    print(f"[오류] Depth 맵 로드 실패: {e}")
                     self.image_label.set_depth_map(None)
             else:
-                print(f"[WARNING] Depth 맵 파일 없음: {depth_path}")
+                print(f"[경고] Depth 맵 파일 없음: {depth_path}")
                 self.image_label.set_depth_map(None)
             
             # Depth 맵 표시 상태가 활성화되어 있으면 화면 업데이트
@@ -457,7 +457,7 @@ class MainWindow(QMainWindow):
             self.clear_measurement()
             
         except Exception as e:
-            print(f"[ERROR] 저장된 측정값 로드 실패: {e}")
+            print(f"[오류] 저장된 측정값 로드 실패: {e}")
             self.clear_measurement()
 
 
@@ -512,15 +512,15 @@ class MainWindow(QMainWindow):
             cx, cy = intrinsics[0, 2], intrinsics[1, 2]
             
             # 디버깅 로그
-            print(f"\n[DEBUG] Calculating Distance...")
-            print(f"  Frame: {frame_name}")
-            print(f"  Depth Path: {depth_path}")
-            print(f"  Depth Shape: {depth_map.shape}")
-            print(f"  Intrinsics Shape: {intrinsics.shape}")
-            print(f"  Image Res: ({ow}, {oh}) -> Depth Res: ({dw}, {dh})")
-            print(f"  Scale Factor: x={sx:.3f}, y={sy:.3f}")
-            print(f"  Clicked: p1({x1_img}, {y1_img}), p2({x2_img}, {y2_img})")
-            print(f"  Mapped:  p1({x1}, {y1}), p2({x2}, {y2})")
+            print(f"\n[디버그] 거리 계산 중...")
+            print(f"  프레임: {frame_name}")
+            print(f"  Depth 경로: {depth_path}")
+            print(f"  Depth 크기: {depth_map.shape}")
+            print(f"  Intrinsics 크기: {intrinsics.shape}")
+            print(f"  이미지 해상도: ({ow}, {oh}) -> Depth 해상도: ({dw}, {dh})")
+            print(f"  스케일 비율: x={sx:.3f}, y={sy:.3f}")
+            print(f"  클릭 좌표: p1({x1_img}, {y1_img}), p2({x2_img}, {y2_img})")
+            print(f"  매핑 좌표:  p1({x1}, {y1}), p2({x2}, {y2})")
             
             # 깊이값 가져오기 (보간 포함)
             def get_depth_with_interpolation(depth_map, y, x, window_size=5):
@@ -557,13 +557,13 @@ class MainWindow(QMainWindow):
             z1, z1_interpolated = get_depth_with_interpolation(depth_map, y1, x1)
             z2, z2_interpolated = get_depth_with_interpolation(depth_map, y2, x2)
             
-            print(f"  Depth Values: z1={z1}, z2={z2}")
+            print(f"  Depth 값: z1={z1}, z2={z2}")
             
             # 경고 메시지 표시
             warning_msg = ""
             if z1 <= 0 or z2 <= 0:
                 warning_msg = " [경고: 유효하지 않은 Depth 값(0) 포함됨]"
-                print("  [WARNING] Point has zero depth! Distance calculation will be incorrect.")
+                print("  [경고] 포인트의 depth 값이 0입니다! 거리 계산이 부정확할 수 있습니다.")
 
             # 3D 좌표 복원 (Back-projection) - Depth Space 좌표 사용
             X1 = (x1 - cx) * z1 / fx
@@ -577,7 +577,7 @@ class MainWindow(QMainWindow):
             # 유클리드 거리 계산
             dist = np.sqrt((X2 - X1)**2 + (Y2 - Y1)**2 + (Z2 - Z1)**2)
             
-            print(f"  Calculated Distance: {dist:.4f} m")
+            print(f"  계산된 거리: {dist:.4f} m")
             
             self.current_measurement = {
                 'frame': frame_name,
@@ -604,7 +604,7 @@ class MainWindow(QMainWindow):
             self.save_measurement()
             
         except Exception as e:
-            print(f"Calculation Error: {e}")
+            print(f"계산 오류: {e}")
             self.info_label.setText(f"계산 오류: {str(e)}")
 
     def save_measurement(self):
@@ -650,10 +650,10 @@ class MainWindow(QMainWindow):
                 writer.writeheader()
                 writer.writerows(existing_data)
             
-            print(f"[INFO] 측정값 저장 완료: {frame_name} -> {m['distance']:.2f}m")
+            print(f"[정보] 측정값 저장 완료: {frame_name} -> {m['distance']:.2f}m")
 
         except Exception as e:
-            print(f"[ERROR] 파일 저장 중 오류: {e}")
+            print(f"[오류] 파일 저장 중 오류: {e}")
 
     def delete_measurement(self):
         """현재 프레임의 측정값을 삭제"""
@@ -700,10 +700,10 @@ class MainWindow(QMainWindow):
             self.current_measurement = None
             self.info_label.setText(f"측정값이 삭제되었습니다: {frame_name}")
 
-            print(f"[INFO] 측정값 삭제 완료: {frame_name}")
+            print(f"[정보] 측정값 삭제 완료: {frame_name}")
 
         except Exception as e:
-            print(f"[ERROR] 측정값 삭제 중 오류: {e}")
+            print(f"[오류] 측정값 삭제 중 오류: {e}")
             self.info_label.setText(f"삭제 오류: {str(e)}")
 
     def export_measurements(self):
@@ -740,12 +740,12 @@ class MainWindow(QMainWindow):
                 # 원본 이미지 로드
                 img_path = self.frames_dir / f"{frame_name}.jpg"
                 if not img_path.exists():
-                    print(f"[WARNING] 이미지 파일 없음: {img_path}")
+                    print(f"[경고] 이미지 파일 없음: {img_path}")
                     continue
 
                 img = cv2.imread(str(img_path))
                 if img is None:
-                    print(f"[WARNING] 이미지 로드 실패: {img_path}")
+                    print(f"[경고] 이미지 로드 실패: {img_path}")
                     continue
 
                 # 좌표 및 거리 정보 추출
@@ -789,14 +789,14 @@ class MainWindow(QMainWindow):
                 output_path = export_dir / f"{frame_name}.jpg"
                 cv2.imwrite(str(output_path), img)
                 exported_count += 1
-                print(f"[INFO] 내보내기 완료: {output_path.name}")
+                print(f"[정보] 내보내기 완료: {output_path.name}")
 
             # 완료 메시지
             QMessageBox.information(self, "내보내기 완료",
                                    f"{exported_count}개의 이미지가 내보내기 되었습니다.\n\n저장 위치: {export_dir}")
 
         except Exception as e:
-            print(f"[ERROR] 내보내기 중 오류: {e}")
+            print(f"[오류] 내보내기 중 오류: {e}")
             QMessageBox.critical(self, "오류", f"내보내기 중 오류가 발생했습니다:\n{str(e)}")
 
 if __name__ == '__main__':

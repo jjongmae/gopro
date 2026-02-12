@@ -19,7 +19,7 @@ try:
         postprocess_model_outputs_for_inference,
     )
 except ImportError as e:
-    print(f"Error importing mapanything: {e}")
+    print(f"mapanything 임포트 오류: {e}")
     sys.exit(1)
 
 def extract_frames(video_path, output_dir, frame_skip=1):
@@ -134,7 +134,7 @@ def main():
     
     if args.device == 'cuda' and not torch.cuda.is_available(): args.device = 'cpu'
     
-    print("Loading Model...")
+    print("모델 로딩 중...")
     model = MapAnything.from_pretrained("facebook/map-anything").to(args.device)
     model.eval()
     
@@ -146,7 +146,7 @@ def main():
             process_video(vf, out_dir, model, args.device, args.frame_skip, args.max_views, args.overlap)
 
 def process_video(vp, out_dir, model, dev, skip, max_v, ov):
-    print(f"\nProcessing {vp.name}...")
+    print(f"\n{vp.name} 처리 중...")
     v_out = out_dir / vp.stem
     frames = extract_frames(vp, v_out / "frames", skip)
     if frames:

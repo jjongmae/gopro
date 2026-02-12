@@ -12,7 +12,7 @@ try:
     from gopro2gpx.gopro2gpx import BuildGPSPoints
     from gopro2gpx.config import Config
 except ImportError as e:
-    print(f"Error importing gopro2gpx: {e}")
+    print(f"gopro2gpx 임포트 오류: {e}")
     print("\n필요한 라이브러리를 설치하세요:")
     print("pip install -r requirements.txt")
     sys.exit(1)
@@ -20,7 +20,7 @@ except ImportError as e:
 
 def extract_gps_data(video_path):
     """GoPro 영상에서 GPS 데이터 추출"""
-    print(f"Processing: {video_path}")
+    print(f"처리 중: {video_path}")
 
     try:
         # gopro2gpx 라이브러리를 사용하여 GPS 데이터 추출
@@ -53,7 +53,7 @@ def extract_gps_data(video_path):
         return gps_data
 
     except Exception as e:
-        print(f"  Error: {e}")
+        print(f"  오류: {e}")
         return None
 
 
@@ -61,7 +61,7 @@ def save_to_json(data, output_path):
     """JSON 형식으로 저장"""
     with open(output_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
-    print(f"Saved to: {output_path}")
+    print(f"저장 완료: {output_path}")
 
 
 def save_to_csv(data, output_path):
@@ -69,7 +69,7 @@ def save_to_csv(data, output_path):
     import csv
 
     if not data:
-        print("No data to save")
+        print("저장할 데이터가 없습니다")
         return
 
     with open(output_path, 'w', newline='', encoding='utf-8') as f:
@@ -78,7 +78,7 @@ def save_to_csv(data, output_path):
         writer.writeheader()
         writer.writerows(data)
 
-    print(f"Saved to: {output_path}")
+    print(f"저장 완료: {output_path}")
 
 
 def save_to_shp(data, output_path):
@@ -122,7 +122,7 @@ def save_to_shp(data, output_path):
                   'SPHEROID["WGS_1984",6378137,298.257223563]],'
                   'PRIMEM["Greenwich",0],UNIT["Degree",0.017453292519943295]]')
 
-    print(f"Saved to: {output_path}")
+    print(f"저장 완료: {output_path}")
 
 
 def save_to_gpx(data, output_path):
@@ -162,7 +162,7 @@ def save_to_gpx(data, output_path):
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(xml_str)
 
-    print(f"Saved to: {output_path}")
+    print(f"저장 완료: {output_path}")
 
 
 def process_video(video_path, output_dir, output_format):
@@ -202,7 +202,7 @@ def process_batch(input_dir, output_dir, output_format):
         video_files.extend(input_dir.glob(f'*{ext}'))
 
     if not video_files:
-        print(f"No video files found in {input_dir}")
+        print(f"{input_dir}에서 비디오 파일을 찾을 수 없습니다")
         return
 
     print(f"\n=== Found {len(video_files)} video file(s) ===\n")
@@ -251,15 +251,15 @@ def main():
     if args.single:
         video_path = Path(args.single)
         if not video_path.exists():
-            print(f"Error: Video file not found: {video_path}")
+            print(f"오류: 비디오 파일을 찾을 수 없습니다: {video_path}")
             sys.exit(1)
 
         output_dir = Path(args.output)
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        print(f"Processing single file: {video_path.name}\n")
+        print(f"단일 파일 처리 중: {video_path.name}\n")
         if process_video(video_path, output_dir, args.format):
-            print("✓ Success")
+            print("✓ 완료")
         else:
             sys.exit(1)
         return
@@ -269,8 +269,8 @@ def main():
     output_dir = Path(args.output)
 
     if not input_dir.exists():
-        print(f"Error: Input directory not found: {input_dir}")
-        print(f"Please create the directory and add GoPro video files.")
+        print(f"오류: 입력 디렉토리를 찾을 수 없습니다: {input_dir}")
+        print(f"디렉토리를 생성하고 GoPro 비디오 파일을 추가하세요.")
         sys.exit(1)
 
     output_dir.mkdir(parents=True, exist_ok=True)
